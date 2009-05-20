@@ -2,10 +2,6 @@ import wapp
 from wapp import html
 
 
-def quiz(triplet):
-    s = "Would you say that %s looks like an awesome triplet?" % triplet
-
-
 class Triplet:
     def __init__(self, n1, n2, n3):
         self.n1 = n1
