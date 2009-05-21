@@ -1,3 +1,5 @@
+import datetime
+
 import wapp
 from wapp import html
 
@@ -10,91 +12,32 @@ class Triplet:
     def is_awesome(self):
         return self.n1 < self.n2 < self.n3
     def __str__(self):
-        return '%d, %d, %d' % (self.n1, self.n2, self.n3)
+        return '%s, %s, %s' % (self.n1, self.n2, self.n3)
     def rate(self):
         if self.is_awesome():
             return "%s is an AWESOME triplet!" % self
         else:
             return "%s is not remotely awesome. Sorry." % self
     def display(self, considered_awesome):
-        return """\
-You thought that %s was %s.
-In fact it is %s.""" % (self, 
-                        awesomeness(considered_awesome),
-                        awesomeness(self.is_awesome()))
+        judgment = awesomeness(considered_awesome)
+        actually = awesomeness(self.is_awesome())
+        if judgment == actually:
+            def ornament(h): return h
+        else:
+            def ornament(h): return html.B(h)
+        return html.Tr([html.Td(ornament(str(self))),
+                        html.Td(ornament(judgment)),
+                        html.Td(ornament(actually))])
     def as_row(self):
-        return html.Tr(_=[html.Td(_=str(self)),
-                          html.Td(_=awesomeness(self.is_awesome()))])
-    def quiz(self, considered_awesome):
-        n1, n2, n3 = self.n1, self.n2, self.n3
-        tests = [self.is_awesome(),
-                 n2 == n1 + 2 and n3 == n1 + 4,
-                 n2 == 2*n1 and n3 == 3*n1,
-                 n3 + n1 == 2*n2]
-        return [considered_awesome != test for test in tests]
+        return html.Tr([html.Td(str(self)),
+                        html.Td(awesomeness(self.is_awesome()))])
+    def satisfies(self, rule):
+        return rule.judge(self.n1, self.n2, self.n3)
                 
-
 def awesomeness(is_awesome):
     if is_awesome:
         return "awesome"
     return "not awesome"
-
-    
-def intro():
-    s = [
-        html.P(),
-        "Hi there! We're going to play a game based on a classic cognitive science experiment first performed by Peter Wason in 1960 (references at the end).",
-        html.P(),
-        "Here's how it works. I'm thinking of a rule which separates sequences of three numbers into 'awesome' triplets, and not-so-awesome triplets. I'll tell you for free that 2 4 6 is an awesome triplet.",
-        html.P(),
-        "What you need to do is to figure out which rule I'm thinking of. To help you do that, I'm going to let you experiment for a bit. Enter any three numbers, and I'll tell you whether they are awesome or not. You can do this as many times as you like, so please take your time.",
-        html.P(),
-        "When you're sure you know what the rule is, hit 'Continue', and I'll test you to see if you've correctly worked out what the rule is.",
-        html.P(),
-        html.Form(method='POST', action='/start',
-                  _=["Enter three numbers separated by spaces: ",
-                     html.Input(name='triple'),
-                     html.submit('Start')])
-        ]
-    return s
-
-
-logfile = open('log', 'a')
-
-class Root(wapp.Resource):
-    def __init__(self):
-        wapp.Resource.__init__(self)
-        self.games = []
-    def get_(self, request):
-        request.reply(intro())
-    def post_start(self, request, triple=''):
-        logfile.write('start %r\n' % triple)
-        logfile.flush()
-        g = Game(len(self.games))
-        self.games.append(g)
-        return g.probe(request, triple)
-    def post_games_V_probe(self, request, gid='', triple=''):
-        logfile.write('probe %r %r\n' % (gid, triple))
-        logfile.flush()
-        try:
-            g = self.get_game(gid)
-        except ValueError:
-            request.reply_404()
-            return
-        return g.probe(request, triple)
-    def post_games_V_quiz(self, request, gid='', yes='', no=''):
-        logfile.write('quiz %r %r %r\n' % (gid, yes, no))
-        logfile.flush()
-        try:
-            g = self.get_game(gid)
-        except ValueError:
-            request.reply_404()
-            return
-        return g.quiz(request, yes, no)
-    def get_game(self, gid):
-        n = int(gid)
-        if not (0 <= n < len(self.games)): raise ValueError()
-        return self.games[n]
 
 
 test_triplets = [
@@ -111,95 +54,227 @@ test_triplets = [
     Triplet(5,5,5),
     ]
 
+
+class RightRule:
+    in_english = "awesome triplets are simply triplets in which each number is greater than the previous one."
+    def judge(self, n1, n2, n3):
+        return Triplet(n1, n2, n3).is_awesome()
+    def explain(self, nerrors):
+        if nerrors:
+            return ["It looks like you've discovered the correct rule: ",
+                    self.in_english,
+                    " (Though you made %d error%s.)" % (nerrors, pluralize(nerrors))]
+        return ["Congratulations! You performed perfectly on this test, discovering the correct rule: ",
+                self.in_english,
+                html.P(),
+                "It may surprise you to know this, but in tests carried out by Peter Wason, only 20% of subjects performed as well as you have."]
+
+def pluralize(n):
+    if n != 1:
+        return "s"
+    return ""
+
+class Add2Rule:
+    def judge(self, n1, n2, n3):
+        return n2 == n1 + 2 and n3 == n1 + 4
+    def explain(self, nerrors):
+        return enlighten("It looks like you thought the rule was that awesome triplets contain numbers which increase by 2.")
+
+class MultiplesRule:
+    def judge(self, n1, n2, n3):
+        return n2 == 2*n1 and n3 == 3*n1
+    def explain(self, nerrors):
+        return enlighten("It looks as though you thought the rule was that awesome triplets contained three successive multiples of the same number, like 3,6,9, or 6,12,18.")
+
+class SameIntervalRule:
+    def judge(self, n1, n2, n3):
+        return n3 + n1 == 2*n2
+    def explain(self, nerrors):
+        return enlighten("It looks as though you thought the rule was that awesome triplets contain numbers separated by the same interval.")
+
+candidate_rules = [RightRule(), Add2Rule(), MultiplesRule(), SameIntervalRule()]
+
+def enlighten(preamble):
+    h = [preamble, " In fact, ", RightRule().in_english,
+         html.P(),
+         "The rule for awesomeness was a fairly simple one, but you invented a more complicated, more specific rule, which happened to fit the first triplet you saw. In experimental tests, it has been found that 80% of subjects do just this, and then never test any of the pairs that ",
+         html.I(html.rsquotify("don't")),
+         " fit their rule. If they did, they would immediately see the more general rule that was applying. This is a case of what psychologists call ",
+         html.singlequote("positive bias"),
+         ". It is one of the many biases, or fundamental errors, which beset the human mind.",
+         html.P(),
+         "There is a thriving community of rationalists at the website ",
+         html.link('http://www.lesswrong.com', "Less Wrong"),
+         html.rsquotify(" who are working to find ways to correct these fundamental errors. If you'd like to learn how to perform better with the hardware you have, you may want to pay them a visit.")]
+    return h
+
+
+def intro():
+    h = [html.P(),
+         html.rsquotify("Hi there! We're going to play a game based on a classic cognitive science experiment first performed by Peter Wason in 1960 (references at the end)."),
+         html.P(),
+         html.rsquotify("Here's how it works. I'm thinking of a rule which separates sequences of three numbers into "),
+         html.singlequote("awesome"),
+         html.rsquotify(" triplets, and not-so-awesome triplets. I'll tell you for free that 2 4 6 is an awesome triplet."),
+         html.P(),
+         html.rsquotify("What you need to do is to figure out which rule I'm thinking of. To help you do that, I'm going to let you experiment for a bit. Enter any three numbers, and I'll tell you whether they are awesome or not. You can do this as many times as you like, so please take your time."),
+         html.P(),
+         html.rsquotify("When you're sure you know what the rule is, hit "),
+         html.singlequote("Continue"),
+         html.rsquotify(", and I'll test you to see if you've correctly worked out what the rule is."),
+         html.P(),
+         html.Form(method='POST', action='/start',
+                   _=["Enter three numbers: ",
+                      html.Input(name='triple'),
+                      html.submit('Start')])]
+    return h
+
+footer = [html.P(), "You can ", html.link('/', "start over"), "."]
+
+
+class Root(wapp.Resource):
+    def __init__(self):
+        wapp.Resource.__init__(self)
+        self.games = []
+        log('starting')
+    def get_(self, request):
+        request.reply(intro())
+    def get_start(self, request):
+        # For some reason we're getting "GET /start" requests;
+        # let's treat them like "GET /".
+        self.get_(request)
+    def post_start(self, request, triple=''):
+        log('start %d %r', len(self.games), triple)
+        g = Game(len(self.games))
+        self.games.append(g)
+        return g.probe(request, triple)
+    def post_games_V_probe(self, request, gid='', triple=''):
+        log('probe %r %r', gid, triple)
+        try:
+            g = self.get_game(gid)
+        except ValueError:
+            request.reply_404()
+            return
+        return g.probe(request, triple)
+    def post_games_V_quiz(self, request, gid='', yes='', no=''):
+        log('quiz %r %r %r', gid, yes, no)
+        try:
+            g = self.get_game(gid)
+        except ValueError:
+            request.reply_404()
+            return
+        return g.quiz(request, yes, no)
+    def get_game(self, gid):
+        n = int(gid)
+        if not (0 <= n < len(self.games)): raise ValueError()
+        return self.games[n]
+
+
 class Game:
+
     def __init__(self, id):
         self.id = id
         self.probes = []
         self.tests = []
+
     def probe(self, request, triple):
         rating = self.parse_probe(triple)
         h = [rating,
              html.P(),
              html.Form(method='POST', action='/games/%d/probe' % self.id,
-                       _=["Enter three numbers separated by spaces: ",
+                       _=["Enter three numbers: ",
                           html.Input(name='triple'),
                           html.submit('Enter')]),
              html.Form(method='POST', action='/games/%d/quiz' % self.id,
-                       _=["Or if you're sure what the rule is: ",
+                       _=[html.rsquotify("Or if you're sure what the rule is: "),
                           html.submit('Continue')]),
              html.P(),
-             self.probe_history()]
+             self.probe_history(),
+             footer]
         request.reply(h)
+
     def probe_history(self):
-        return html.Table(_=[triplet.as_row() for triplet in self.probes])
+        if not self.probes:
+            return []
+        return ["For reference, your triplets so far:",
+                html.P(),
+                html.Table(rules='all',
+                           _=[triplet.as_row() for triplet in self.probes])]
+
     def parse_probe(self, triple):
         try:
-            s1, s2, s3 = triple.split()
+            n1, n2, n3 = map(as_number, triple.replace(',', ' ').split())
         except ValueError:
-            return "%s is not a triple." % triple
-        try:
-            n1, n2, n3 = int(s1), int(s2), int(s3)
-        except ValueError:
-            return "%s is not a triple of numbers." % triple
+            return [str(triple),
+                    html.rsquotify(" doesn't look like a triplet of numbers to me.")]
         t = Triplet(n1, n2, n3)
         self.probes.append(t)
         return t.rate()
+
     def quiz(self, request, yes, no):
         if yes or no:
             self.tests.append(yes != '')
         if len(self.tests) == len(test_triplets):
             return self.evaluate(request)
         triplet = test_triplets[len(self.tests)]
-        h = ["So, you're pretty sure what the rule is now? Cool. I'm going to give you some sets of numbers, and you can tell me whether they seem awesome to you or not.",
+        h = [html.rsquotify("So, you're pretty sure what the rule is now? Cool. I'm going to give you some sets of numbers, and you can tell me whether they seem awesome to you or not."),
              html.P(),
              self.quiz_history(),
              html.Form(method='POST', action='/games/%d/quiz' % self.id,
                        _=["Would you say that %s looks like an awesome triplet? " % triplet,
                           html.submit('Yes', 'yes'),
-                          html.submit('No', 'no')])]
+                          html.submit('No', 'no')]),
+             footer]
         request.reply(h)
+
     def quiz_history(self):
         return [["You judged %s %s." % (triplet, awesomeness(considered_awesome)),
                  html.Br()]
                 for triplet, considered_awesome in zip(test_triplets, self.tests)]
+
     def evaluate(self, request):
-        h1 = [[triplet.display(considered_awesome),
-               html.Br()]
-              for triplet, considered_awesome in zip(test_triplets, self.tests)]
-        terrors = [triplet.quiz(considered_awesome)
-                   for triplet, considered_awesome in zip(test_triplets, self.tests)]
-        errors = [sum(t) for t in zip(*terrors)]
-        if errors[0] == 0:
-            h2 = ["Congratulations! You have performed perfectly on this test, having discovered the correct rule: awesome triplets are simply triplets in which each number is greater than the previous one. ",
-                  html.P(),
-                  "It may surprise you to know this, but in tests carried out by Peter Wason, only 20% of subjects performed as well as you have."]
+        h1 = html.Table(rules='all',
+                        _=[[html.Tr([html.Th("Triplet"),
+                                     html.Th("Your judgment"),
+                                     html.Th("In fact, it's")])]
+                           +[triplet.display(considered_awesome)
+                             for triplet, considered_awesome in zip(test_triplets, self.tests)]])
+        errors = self.match_rules()
+        bestscore, besttest = min((nerrors_k, k) for k, nerrors_k in enumerate(errors))
+        log('evaluate %r %r %r', self.id, besttest, bestscore)
+        if bestscore >= 3:
+            h2 = enlighten(html.rsquotify("I'm not sure what rule you settled on."))
         else:
-            bestscore, besttest = min((ek, k) for k, ek in enumerate(errors))
-            if bestscore >= 3:
-                h2 = "It looks like you didn't find any rule at all."
-            elif besttest == 0:
-                h2 = "It looks like you have discovered the correct rule, though you made %d errors." % bestscore
-            else:
-                if besttest == 1:
-                    h2a = "It looks like you thought the rule was that awesome triplets contain numbers which increase by 2."
-                elif besttest == 2:
-                    h2a = "It looks as though you thought the rule was that awesome triplets contained three successive multiples of the same number, like 3,6,9, or 6,12,18."
-                elif besttest == 3:
-                    h2a = "It looks as though you thought the rule was that awesome triplets contain numbers separated by the same interval."
-                h2a += " In fact, awesome triplets are simply triplets in which each number is greater than the previous one."
-                h2 = [h2a,
-                      html.P(),
-                      "The rule for awesomeness was a fairly simple one, but you invented a more complicated, more specific rule, which happened to fit the first triplet you saw. In experimental tests, it has been found that 80% of subjects do just this, and then never test any of the pairs that *don't* fit their rule. If they did, they would immediately see the more general rule that was applying. This is a case of what psychologists call 'positive bias'. It is one of the many biases, or fundamental errors, which beset the human mind.",
-                      html.P(),
-                      "There is a thriving community of rationalists at the website ",
-                      html.link('http://www.lesswrong.com', "Less Wrong"),
-                      " who are working to find ways to correct these fundamental errors. If you'd like to learn how to perform better with the hardware you have, you may want to pay them a visit."]
-        h3 = ["If you'd like to learn more about positive bias, you may enjoy the article ",
+            h2 = candidate_rules[besttest].explain(bestscore)
+        h3 = [html.rsquotify("If you'd like to learn more about positive bias, you may enjoy the article "),
               html.link('http://www.overcomingbias.com/2007/08/positive-bias-l.html',
-                        "'Positive Bias: Look Into the Dark'"),
+                        html.singlequote("Positive Bias: Look Into the Dark")),
+              ".",
               html.P(),
-              "If you'd like to learn more about the experiment which inspired this test, look for a paper titled 'On the failure to eliminate hypotheses in a conceptual task' (Quarterly Journal of Experimental Psychology, 12: 129-140, 1960)."]
-        request.reply([h1, html.P(), h2, html.P(), h3])
+              html.rsquotify("If you'd like to learn more about the experiment which inspired this test, look for a paper titled "),
+              html.singlequote("On the failure to eliminate hypotheses in a conceptual task"), 
+              " (Quarterly Journal of Experimental Psychology, 12: 129-140, 1960)."]
+        request.reply([h1, html.P(), h2, html.P(), h3, footer])
+
+    def match_rules(self):
+        "Return the error count for each rule in candidate_rules."
+        return [sum([considered_awesome != triplet.satisfies(rule)
+                     for triplet, considered_awesome in zip(test_triplets, self.tests)])
+                for rule in candidate_rules]
+
+def as_number(s):
+    try:
+        return int(s)
+    except ValueError:
+        return float(s)
+
+
+logfile = open('log', 'a')
+
+def log(format, *args):
+    timestamp = datetime.datetime.utcnow().isoformat()
+    logfile.write('%s %s\n' % (timestamp, format % args))
+    logfile.flush()
 
 
 if __name__ == '__main__':
