@@ -35,6 +35,11 @@ def make_lonetag_emitter(tag):
 	return emitter
     return make
 
+def make_entity(name):
+    def entity():
+        return '&%s;' % name
+    return entity
+
 A        = make_tag_emitter('a')
 B        = make_tag_emitter('b')
 Code     = make_tag_emitter('code')
@@ -62,6 +67,11 @@ Input    = make_lonetag_emitter('input')
 P        = make_lonetag_emitter('p')
 Hr       = make_lonetag_emitter('hr')
 
+lsquo     = make_entity('#8216')
+rsquo     = make_entity('#8217')
+ldquo     = make_entity('#8220')
+rdquo     = make_entity('#8221')
+
 
 # Some conveniences:
 
@@ -73,3 +83,13 @@ def submit(value, name=None):
 	return Input(type='submit', value=str(value))
     else:
 	return Input(type='submit', name=name, value=str(value))
+
+def singlequote(h): return [lsquo, h, rsquo]
+def doublequote(h): return [ldquo, h, rdquo]
+
+def rsquotify(string):
+    result = []
+    for part in string.split("'"):
+        result.append(part)
+        result.append(rsquo)
+    return result[:-1]
