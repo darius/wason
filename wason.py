@@ -60,6 +60,7 @@ class RightRule:
     def judge(self, n1, n2, n3):
         return Triplet(n1, n2, n3).is_awesome()
     def explain(self, nerrors):
+        # XXX add some info about positive bias
         if nerrors:
             return ["It looks like you've discovered the correct rule: ",
                     self.in_english,
@@ -97,6 +98,7 @@ candidate_rules = [RightRule(), Add2Rule(), MultiplesRule(), SameIntervalRule()]
 def enlighten(preamble):
     h = [preamble, " In fact, ", RightRule().in_english,
          html.P(),
+         # XXX rephrase the 'you invented' when no rule matches
          "The rule for awesomeness was a fairly simple one, but you invented a more complicated, more specific rule, which happened to fit the first triplet you saw. In experimental tests, it has been found that 80% of subjects do just this, and then never test any of the pairs that ",
          html.I(html.rsquotify("don't")),
          " fit their rule. If they did, they would immediately see the more general rule that was applying. This is a case of what psychologists call ",
@@ -212,7 +214,7 @@ class Game:
         return t.rate()
 
     def quiz(self, request, yes, no):
-        if yes or no:
+        if (yes or no) and len(self.tests) < len(test_triplets):
             self.tests.append(yes != '')
         if len(self.tests) == len(test_triplets):
             return self.evaluate(request)
@@ -269,12 +271,11 @@ def as_number(s):
         return float(s)
 
 
-logfile = open('log', 'a')
+logfile = open('log', 'a', 1) # 1 for line-buffering
 
 def log(format, *args):
     timestamp = datetime.datetime.utcnow().isoformat()
     logfile.write('%s %s\n' % (timestamp, format % args))
-    logfile.flush()
 
 
 if __name__ == '__main__':
